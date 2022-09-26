@@ -154,10 +154,8 @@ pub const Merger = struct {
         var iovs = try allocator.alloc(os.iovec_const, flen + 1);
         defer allocator.free(iovs);
 
-        for (iovs) |*iov, i| {
-            if (i == flen)
-                break;
-
+        var iovsp = iovs[0..flen];
+        for (iovsp) |*iov, i| {
             iov.iov_base = @ptrCast([*]const u8, &props[i]);
             iov.iov_len = @sizeOf(FileProp);
         }
@@ -267,9 +265,6 @@ pub const Splitter = struct {
     }
 
     fn load(this: *This, file: fs.File) ![]FileProp {
-        const allocator = &this.allocator;
-        const prop_size = @sizeOf(FileProp);
-
         //
         // Get file count
         //
@@ -279,17 +274,19 @@ pub const Splitter = struct {
         };
         const cpos = try file.getPos();
 
-        var buffer: [@sizeOf(u64)]u8 = undefined;
-        const count_rd = try file.readAll(&buffer);
-        if (count_rd != @sizeOf(u64))
+        var count: u64 = 0;
+        const count_size = @sizeOf(u64);
+        const count_bf = @ptrCast([*]u8, &count)[0..count_size];
+        const count_rd = try file.readAll(count_bf);
+        if (count_rd != count_size or count == 0)
             return error.InvalidFile;
 
-        const count_bf = @alignCast(@alignOf(*u64), &buffer);
-        const count = mem.bigToNative(u64, @ptrCast(*u64, count_bf).*);
+        count = mem.bigToNative(u64, count);
 
         //
         // Get file properties
         //
+        const prop_size = @sizeOf(FileProp);
         if (cpos < prop_size or count > cpos)
             return error.InvalidFile;
 
@@ -300,6 +297,7 @@ pub const Splitter = struct {
         const pbegin = cpos - pcount;
         try file.seekTo(pbegin);
 
+        const allocator = &this.allocator;
         var props = try allocator.alloc(FileProp, @intCast(usize, count));
         var iovs = try allocator.alloc(os.iovec, @intCast(usize, count));
         defer allocator.free(iovs);
