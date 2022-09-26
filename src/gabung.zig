@@ -139,9 +139,18 @@ pub const Merger = struct {
         //
         // Merge files
         //
-        // TODO: create a new dir if does not exist
-        const trg = try fs.cwd().createFile(this.trg, .{});
-        defer trg.close();
+        const cwd = fs.cwd();
+        const trg = brk: while (true) {
+            const _trg = this.trg;
+            break :brk cwd.createFile(_trg, .{}) catch |err| switch (err) {
+                error.FileNotFound => {
+                    const idx = mem.lastIndexOf(u8, _trg, "/") orelse return err;
+                    try cwd.makePath(_trg[0..idx]);
+                    continue;
+                },
+                else => return err,
+            };
+        };
 
         for (files) |file| {
             try trg.writeFileAll(file, .{});
