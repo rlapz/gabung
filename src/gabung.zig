@@ -130,14 +130,11 @@ pub const Merger = struct {
         var files = try allocator.alloc(fs.File, flen);
         defer allocator.free(files);
 
-        var props = try allocator.alloc(FileProp, flen);
-        defer allocator.free(props);
-
         //
         // Load all files
         //
-        @memset(@ptrCast([*]u8, props.ptr), 0x69, flen * @sizeOf(FileProp));
-        try this.loadAll(files, props);
+        var props = try this.loadAll(files);
+        defer allocator.free(props);
 
         //
         // Merge files
@@ -179,9 +176,13 @@ pub const Merger = struct {
         try trg.writevAll(iovs);
     }
 
-    fn loadAll(this: *This, files: []fs.File, props: []FileProp) !void {
+    fn loadAll(this: *This, files: []fs.File) ![]FileProp {
         const src = this.src;
         const cwd = fs.cwd();
+        const flen = files.len;
+
+        var props = try this.allocator.alloc(FileProp, flen);
+        @memset(@ptrCast([*]u8, props.ptr), 0x69, flen * @sizeOf(FileProp));
 
         for (src) |fname, i| {
             const file = try cwd.openFile(fname, .{});
@@ -200,6 +201,8 @@ pub const Merger = struct {
             p.setName(fbsname);
             p.setExt(fext);
         }
+
+        return props;
     }
 };
 
