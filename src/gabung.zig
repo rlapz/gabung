@@ -53,7 +53,7 @@ const FileProp = extern struct {
     fn setName(this: *This, name: []const u8) void {
         var len = name.len;
         if (len > name_len)
-            len = (len - name_len);
+            len -= (len - name_len);
 
         mem.copy(u8, &this.name, name[0..len]);
         this.name[len] = 0;
@@ -62,7 +62,7 @@ const FileProp = extern struct {
     fn setExt(this: *This, ext: []const u8) void {
         var len = ext.len;
         if (len > ext_len)
-            len = (len - ext_len);
+            len -= (len - ext_len);
 
         mem.copy(u8, &this.ext, ext[0..len]);
         this.ext[len] = 0;
