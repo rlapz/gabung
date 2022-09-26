@@ -269,7 +269,6 @@ pub const Splitter = struct {
     fn load(this: *This, file: fs.File) ![]FileProp {
         const allocator = &this.allocator;
         const prop_size = @sizeOf(FileProp);
-        var buffer: [prop_size]u8 = undefined;
 
         //
         // Get file count
@@ -280,10 +279,12 @@ pub const Splitter = struct {
         };
         const cpos = try file.getPos();
 
-        var count_bf = @alignCast(@alignOf(*u64), buffer[0..@sizeOf(u64)]);
-        const count_rd = try file.readAll(count_bf);
+        var buffer: [@sizeOf(u64)]u8 = undefined;
+        const count_rd = try file.readAll(&buffer);
         if (count_rd != @sizeOf(u64))
             return error.InvalidFile;
+
+        const count_bf = @alignCast(@alignOf(*u64), &buffer);
         const count = mem.bigToNative(u64, @ptrCast(*u64, count_bf).*);
 
         //
@@ -300,26 +301,19 @@ pub const Splitter = struct {
         try file.seekTo(pbegin);
 
         var props = try allocator.alloc(FileProp, @intCast(usize, count));
-        var prop_bf = @alignCast(@alignOf(*FileProp), &buffer);
+        var iovs = try allocator.alloc(os.iovec, @intCast(usize, count));
+        defer allocator.free(iovs);
 
-        // TODO: using iovec
-        var i: usize = 0;
-        for (props) |*prop| {
-            const prop_rd = try file.readAll(prop_bf);
-            if (prop_rd != prop_size)
-                return error.InvalidFile;
-
-            const p = @ptrCast(*FileProp, prop_bf);
-            prop.setName(p.getName());
-            prop.setExt(p.getExt());
-            prop.offt = p.offt;
-
-            i += 1;
+        for (iovs) |*iov, i| {
+            iov.iov_base = @ptrCast([*]u8, &props[i]);
+            iov.iov_len = prop_size;
         }
 
-        if (i != count)
+        const file_rd = try file.readvAll(iovs);
+        if (file_rd != (prop_size * count))
             return error.InvalidFile;
 
+        try file.seekTo(0);
         return props;
     }
 };
