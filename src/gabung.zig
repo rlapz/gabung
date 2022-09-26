@@ -292,7 +292,11 @@ pub const Splitter = struct {
         if (cpos < prop_size or count > cpos)
             return error.InvalidFile;
 
-        const pbegin = cpos - (prop_size * count);
+        const pcount = prop_size * count;
+        if (pcount > cpos)
+            return error.InvalidFile;
+
+        const pbegin = cpos - pcount;
         try file.seekTo(pbegin);
 
         var props = try allocator.alloc(FileProp, @intCast(usize, count));
