@@ -231,14 +231,17 @@ pub const Splitter = struct {
         defer allocator.free(props);
 
         //
-        // Create target path
+        // Create target path (create one if does not exist)
         //
-        cwd.makePath(this.trg) catch |err| switch (err) {
-            error.PathAlreadyExists => {},
-            else => return err,
+        var trg_dir = brk: while (true) {
+            break :brk cwd.openDir(this.trg, .{}) catch |err| switch (err) {
+                error.FileNotFound => {
+                    try cwd.makePath(this.trg);
+                    continue;
+                },
+                else => return err,
+            };
         };
-
-        var trg_dir = try cwd.openDir(this.trg, .{});
         defer trg_dir.close();
 
         //
