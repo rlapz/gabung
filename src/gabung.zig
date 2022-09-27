@@ -5,8 +5,6 @@ const os = std.os;
 const Allocator = mem.Allocator;
 
 const assert = std.debug.assert;
-const dprint = std.debug.print;
-const testing = std.testing;
 
 // TODO: add max files limit
 //const max_files = 128;
@@ -145,9 +143,11 @@ pub const Merger = struct {
             const _trg = this.trg;
             break :brk cwd.createFile(_trg, .{}) catch |err| switch (err) {
                 error.FileNotFound => {
-                    const idx = mem.lastIndexOf(u8, _trg, "/") orelse return err;
-                    try cwd.makePath(_trg[0..idx]);
-                    continue;
+                    if (mem.lastIndexOf(u8, _trg, "/")) |idx| {
+                        try cwd.makePath(_trg[0..idx]);
+                        continue;
+                    }
+                    return err;
                 },
                 else => return err,
             };
@@ -177,8 +177,7 @@ pub const Merger = struct {
         // Add file counter
         //
         const fc = mem.nativeToBig(u64, flen);
-        const fc_bf = @ptrCast([*]const u8, &fc);
-        iovs[flen].iov_base = fc_bf;
+        iovs[flen].iov_base = @ptrCast([*]const u8, &fc);
         iovs[flen].iov_len = @sizeOf(u64);
 
         //
