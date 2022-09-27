@@ -127,17 +127,18 @@ pub const Merger = struct {
     pub fn merge(this: *This) !void {
         const flen = this.src.len;
         const allocator = &this.allocator;
-        var files = try allocator.alloc(fs.File, flen);
-        defer allocator.free(files);
 
         //
         // Load all files
         //
+        var files = try allocator.alloc(fs.File, flen);
+        defer allocator.free(files);
+
         var props = try this.loadAll(files);
         defer allocator.free(props);
 
         //
-        // Merge files
+        // Create a new file (target file)
         //
         const cwd = fs.cwd();
         const trg = brk: while (true) {
@@ -152,6 +153,9 @@ pub const Merger = struct {
             };
         };
 
+        //
+        // Merge files
+        //
         for (files) |file| {
             try trg.writeFileAll(file, .{});
             file.close();
@@ -233,6 +237,10 @@ pub const Splitter = struct {
     pub fn split(this: *This) !void {
         const allocator = &this.allocator;
         const cwd = fs.cwd();
+
+        //
+        // Open and load source file
+        //
         const file = try cwd.openFile(this.src, .{});
         defer file.close();
 
@@ -240,7 +248,7 @@ pub const Splitter = struct {
         defer allocator.free(props);
 
         //
-        // Create target path (create one if does not exist)
+        // Create target path
         //
         var trg_dir = brk: while (true) {
             break :brk cwd.openDir(this.trg, .{}) catch |err| switch (err) {
