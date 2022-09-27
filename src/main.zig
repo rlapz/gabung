@@ -1,21 +1,24 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const mem = std.mem;
 const dprint = std.debug.print;
 
+const util = @import("./util.zig");
 const gabung = @import("./gabung.zig");
 const Merger = gabung.Merger;
 const Splitter = gabung.Splitter;
 
-fn printErr(comptime fmt: []const u8, args: anytype) void {
-    std.io.getStdErr().writer().print(fmt, args) catch {};
-}
+// Override default log function
+pub const log = util.log;
 
-fn printOut(comptime fmt: []const u8, args: anytype) void {
-    std.io.getStdOut().writer().print(fmt, args) catch {};
-}
+// Override default log level
+pub const log_level = switch (builtin.mode) {
+    .Debug => .debug,
+    else => .info,
+};
 
 fn printHelp(name: [*:0]const u8) void {
-    printOut(
+    util.stdout(
         \\Gabung: A simple file merger
         \\
         \\ Usages:
@@ -34,10 +37,15 @@ fn printHelp(name: [*:0]const u8) void {
         \\    {s} -s sus.jpg -o .
         \\    {s} -s sus.jpg -o sus/
         \\
-    , .{ name, name, name, name, name, name });
+        \\
+        \\[Release mode: {s}]
+        \\
+    , .{ name, name, name, name, name, name, @tagName(builtin.mode) });
 }
 
 pub fn main() !u8 {
+    std.log.debug("--[Debug Mode]--\n", .{});
+
     var need_help = true;
     const argv = std.os.argv;
     const len = argv.len;
@@ -70,9 +78,10 @@ pub fn main() !u8 {
 
         need_help = false;
 
+        const logger = std.log.scoped(.Merger);
         var m = Merger.init(allocator, files, out);
         m.merge() catch |err| {
-            printErr("{s}\n", .{@errorName(err)});
+            logger.err("{s}", .{@errorName(err)});
             return 1;
         };
     } else if (mem.eql(u8, argv1, "-s")) {
@@ -84,9 +93,10 @@ pub fn main() !u8 {
 
         need_help = false;
 
+        const logger = std.log.scoped(.Splitter);
         var s = Splitter.init(allocator, mem.span(argv[2]), mem.span(argv[4]));
         s.split() catch |err| {
-            printErr("{s}\n", .{@errorName(err)});
+            logger.err("{s}", .{@errorName(err)});
             return 1;
         };
     } else {

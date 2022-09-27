@@ -110,6 +110,8 @@ pub const Merger = struct {
 
     const This = @This();
 
+    const logger = std.log.scoped(.Merger);
+
     pub fn init(
         allocator: Allocator,
         src: []const []const u8,
@@ -144,20 +146,33 @@ pub const Merger = struct {
             break :brk cwd.createFile(_trg, .{}) catch |err| switch (err) {
                 error.FileNotFound => {
                     if (mem.lastIndexOf(u8, _trg, "/")) |idx| {
-                        try cwd.makePath(_trg[0..idx]);
+                        cwd.makePath(_trg[0..idx]) catch |_err| {
+                            logger.err("Failed to create path: {s}", .{
+                                _trg[0..idx],
+                            });
+                            return _err;
+                        };
                         continue;
                     }
+
+                    logger.err("Failed to create file: {s}", .{_trg});
                     return err;
                 },
-                else => return err,
+                else => {
+                    logger.err("Failed to create file: {s}", .{_trg});
+                    return err;
+                },
             };
         };
 
         //
         // Merge files
         //
-        for (files) |file| {
-            try trg.writeFileAll(file, .{});
+        for (files) |file, i| {
+            trg.writeFileAll(file, .{}) catch |err| {
+                logger.err("Failed to write file: {s}", .{props[i].getName()});
+                return err;
+            };
             file.close();
         }
 
@@ -183,7 +198,10 @@ pub const Merger = struct {
         //
         // Write all
         //
-        try trg.writevAll(iovs);
+        trg.writevAll(iovs) catch |err| {
+            logger.err("Failed to write file properties", .{});
+            return err;
+        };
     }
 
     fn loadAll(this: *This, files: []fs.File) ![]FileProp {
@@ -195,8 +213,16 @@ pub const Merger = struct {
         @memset(@ptrCast([*]u8, props.ptr), 0x69, flen * @sizeOf(FileProp));
 
         for (src) |fname, i| {
-            const file = try cwd.openFile(fname, .{});
+            const file = cwd.openFile(fname, .{}) catch |err| {
+                logger.err("Failed to open: {s}", .{fname});
+                return err;
+            };
             const fstat = try file.stat();
+            if (fstat.kind == .Directory) {
+                logger.err("Cannot accept directory: {s}", .{fname});
+                return error.InvalidArgument;
+            }
+
             const fext = fs.path.extension(fname);
             const fbsname = brk: {
                 const bn = fs.path.basename(fname);
@@ -225,6 +251,9 @@ pub const Splitter = struct {
     trg: []const u8,
 
     const This = @This();
+
+    const logger = std.log.scoped(.Splitter);
+
     pub fn init(allocator: Allocator, src: []const u8, trg: []const u8) This {
         return This{
             .allocator = allocator,
@@ -240,7 +269,10 @@ pub const Splitter = struct {
         //
         // Open and load source file
         //
-        const file = try cwd.openFile(this.src, .{});
+        const file = cwd.openFile(this.src, .{}) catch |err| {
+            logger.err("Failed to open: {s}", .{this.src});
+            return err;
+        };
         defer file.close();
 
         const props = try this.load(file);
@@ -252,10 +284,20 @@ pub const Splitter = struct {
         var trg_dir = brk: while (true) {
             break :brk cwd.openDir(this.trg, .{}) catch |err| switch (err) {
                 error.FileNotFound => {
-                    try cwd.makePath(this.trg);
+                    cwd.makePath(this.trg) catch |_err| {
+                        logger.err("Failed to create path: {s}", .{
+                            this.trg,
+                        });
+                        return _err;
+                    };
                     continue;
                 },
-                else => return err,
+                else => {
+                    logger.err("Failed to open directory: {s}", .{
+                        this.trg,
+                    });
+                    return err;
+                },
             };
         };
         defer trg_dir.close();
@@ -266,18 +308,27 @@ pub const Splitter = struct {
         var offt: u64 = 0;
         var buffer: [1024]u8 = undefined;
         for (props) |*prop| {
-            const ftrg_name = try std.fmt.bufPrint(&buffer, "{s}{s}", .{
+            const ftrg_name = std.fmt.bufPrint(&buffer, "{s}{s}", .{
                 prop.getName(),
                 prop.getExt(),
-            });
-            const ftrg = try trg_dir.createFile(ftrg_name, .{});
+            }) catch |err| {
+                logger.err("File name is too long", .{});
+                return err;
+            };
+            const ftrg = trg_dir.createFile(ftrg_name, .{}) catch |err| {
+                logger.err("Failed to create file: {s}", .{ftrg_name});
+                return err;
+            };
             defer ftrg.close();
 
             const size = prop.getOfft();
-            try ftrg.writeFileAll(file, .{
+            ftrg.writeFileAll(file, .{
                 .in_offset = offt,
                 .in_len = size,
-            });
+            }) catch |err| {
+                logger.err("Failed to create file: {s}", .{ftrg_name});
+                return err;
+            };
 
             offt += size;
         }
@@ -297,6 +348,7 @@ pub const Splitter = struct {
         const count_size = @sizeOf(u64);
         const count_bf = @ptrCast([*]u8, &count)[0..count_size];
         const count_rd = try file.readAll(count_bf);
+
         if (count_rd != count_size or count == 0)
             return error.InvalidFile;
 
@@ -326,7 +378,10 @@ pub const Splitter = struct {
             iov.iov_len = prop_size;
         }
 
-        const file_rd = try file.readvAll(iovs);
+        const file_rd = file.readvAll(iovs) catch |err| {
+            logger.err("Failed to read file properties", .{});
+            return err;
+        };
         if (file_rd != (prop_size * count))
             return error.InvalidFile;
 
