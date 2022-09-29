@@ -23,14 +23,18 @@ fn printHelp(name: [*:0]const u8) void {
         \\
         \\ Usages:
         \\  * Merge
-        \\    {s} -m [FILE_1, FILE_2, FILE_3, ...] -o [FILE_OUTPUT]
+        \\    - Default
+        \\      {s} -m [FILE_1, FILE_2, ...] -o [FILE_OUTPUT]
+        \\
+        \\    - Without footer (file properties: file name, size, etc.)
+        \\      {s} -m [FILE_1, FILE_2, ...] -o [FILE_OUTPUT] --no-footer
         \\
         \\  * Split
         \\    {s} -s [FILE_INPUT] -o [PATH_OUTPUT]
         \\
         \\ Examples:
         \\  * Merge
-        \\    {s} -m file1.jpg file2.txt file3.zip -o sus.jpg
+        \\    {s} -m file1.jpg file2.txt -o sus.jpg
         \\    {s} -m file1.jpg file2.txt file3.zip file4.exe -o sus.jpg
         \\
         \\  * Split
@@ -40,7 +44,7 @@ fn printHelp(name: [*:0]const u8) void {
         \\
         \\[Release mode: {s}]
         \\
-    , .{ name, name, name, name, name, name, @tagName(builtin.mode) });
+    , .{ name, name, name, name, name, name, name, @tagName(builtin.mode) });
 }
 
 pub fn main() !u8 {
@@ -64,11 +68,21 @@ pub fn main() !u8 {
         if (len < 6)
             return 1;
 
-        if (!mem.eql(u8, mem.span(argv[len - 2]), "-o"))
+        var out_idx: usize = len - 1;
+        var opt = Merger.Opt{};
+        if (mem.eql(u8, mem.span(argv[len - 1]), "--no-footer")) {
+            opt.no_footer = true;
+            out_idx -= 1;
+        }
+
+        if (!mem.eql(u8, mem.span(argv[out_idx - 1]), "-o"))
             return 1;
 
-        const out = mem.span(argv[len - 1]);
-        const filesz = argv[2 .. len - 2];
+        const filesz = argv[2 .. out_idx - 1];
+        if (filesz.len < 2)
+            return 1;
+
+        const out = mem.span(argv[out_idx]);
         var files = try allocator.alloc([]const u8, filesz.len);
         defer allocator.free(files);
 
@@ -80,7 +94,7 @@ pub fn main() !u8 {
 
         const logger = std.log.scoped(.Merger);
         var m = Merger.init(allocator, files, out);
-        m.merge() catch |err| {
+        m.merge(opt) catch |err| {
             logger.err("{s}", .{@errorName(err)});
             return 1;
         };

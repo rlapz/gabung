@@ -108,8 +108,11 @@ pub const Merger = struct {
     src: []const []const u8,
     trg: []const u8,
 
-    const This = @This();
+    pub const Opt = struct {
+        no_footer: bool = false,
+    };
 
+    const This = @This();
     const logger = std.log.scoped(.Merger);
 
     pub fn init(
@@ -124,7 +127,7 @@ pub const Merger = struct {
         };
     }
 
-    pub fn merge(this: *This) !void {
+    pub fn merge(this: *This, opt: Opt) !void {
         const flen = this.src.len;
         const allocator = &this.allocator;
 
@@ -134,8 +137,16 @@ pub const Merger = struct {
         var files = try allocator.alloc(fs.File, flen);
         defer allocator.free(files);
 
-        var props = try this.loadAll(files);
-        defer allocator.free(props);
+        var props = brk: {
+            if (opt.no_footer) {
+                try this.loadAllNoProp(files);
+                break :brk null;
+            }
+            break :brk try this.loadAll(files);
+        };
+        defer if (props) |p| {
+            allocator.free(p);
+        };
 
         //
         // Create a new file (target file)
@@ -173,11 +184,15 @@ pub const Merger = struct {
         //
         for (files) |file, i| {
             trg.writeFileAll(file, .{}) catch |err| {
-                logger.err("Failed to write file: {s}", .{props[i].getName()});
+                logger.err("Failed to write file: {s}", .{this.src[i]});
                 return err;
             };
             file.close();
         }
+
+        // Without footer
+        if (opt.no_footer)
+            return;
 
         //
         // Add file properties
@@ -186,8 +201,9 @@ pub const Merger = struct {
         defer allocator.free(iovs);
 
         var iovsp = iovs[0..flen];
+        var _props = props.?;
         for (iovsp) |*iov, i| {
-            iov.iov_base = @ptrCast([*]const u8, &props[i]);
+            iov.iov_base = @ptrCast([*]const u8, &_props[i]);
             iov.iov_len = @sizeOf(FileProp);
         }
 
@@ -205,6 +221,18 @@ pub const Merger = struct {
             logger.err("Failed to write file properties", .{});
             return err;
         };
+    }
+
+    fn loadAllNoProp(this: *This, files: []fs.File) !void {
+        const src = this.src;
+        const cwd = fs.cwd();
+
+        for (src) |fname, i| {
+            files[i] = cwd.openFile(fname, .{}) catch |err| {
+                logger.err("Failed to open: {s}", .{fname});
+                return err;
+            };
+        }
     }
 
     fn loadAll(this: *This, files: []fs.File) ![]FileProp {
