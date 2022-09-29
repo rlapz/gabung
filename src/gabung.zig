@@ -141,9 +141,11 @@ pub const Merger = struct {
         // Create a new file (target file)
         //
         const cwd = fs.cwd();
-        const trg = brk: while (true) {
+        var trg: fs.File = undefined;
+
+        while (true) {
             const _trg = this.trg;
-            break :brk cwd.createFile(_trg, .{}) catch |err| switch (err) {
+            trg = cwd.createFile(_trg, .{}) catch |err| switch (err) {
                 error.FileNotFound => {
                     if (mem.lastIndexOf(u8, _trg, "/")) |idx| {
                         cwd.makePath(_trg[0..idx]) catch |_err| {
@@ -163,7 +165,8 @@ pub const Merger = struct {
                     return err;
                 },
             };
-        };
+            break;
+        }
 
         //
         // Merge files
@@ -281,8 +284,9 @@ pub const Splitter = struct {
         //
         // Create target path
         //
-        var trg_dir = brk: while (true) {
-            break :brk cwd.openDir(this.trg, .{}) catch |err| switch (err) {
+        var trg_dir: fs.Dir = undefined;
+        while (true) {
+            trg_dir = cwd.openDir(this.trg, .{}) catch |err| switch (err) {
                 error.FileNotFound => {
                     cwd.makePath(this.trg) catch |_err| {
                         logger.err("Failed to create path: {s}", .{
@@ -299,7 +303,8 @@ pub const Splitter = struct {
                     return err;
                 },
             };
-        };
+            break;
+        }
         defer trg_dir.close();
 
         //
